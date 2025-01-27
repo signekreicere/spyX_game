@@ -1,0 +1,141 @@
+import React, { useEffect, useState } from "react";
+import { useParams } from "react-router-dom";
+import NameInputPopup from "./NameInputPopup";
+import GameSidebar from "./GameSidebar";
+import socket from "../socket";
+
+const GameRoom = () => {
+    const { gameCode } = useParams();
+    const [gameData, setGameData] = useState(null);
+    const [locations, setLocations] = useState([]);
+    const [selectedLocations, setSelectedLocations] = useState({});
+    const [loading, setLoading] = useState(true);
+    const [showPopup, setShowPopup] = React.useState(false);
+    const [playerName, setPlayerName] = React.useState("");
+
+    useEffect(() => {
+        const fetchGameData = async () => {
+            try {
+                const response = await fetch(`/api/game/${gameCode}`, { credentials: "include" });
+                const data = await response.json();
+
+                if (data.error) {
+                    console.error("Error fetching game data:", data.error);
+                    if (data.error === "Session ID is required" || data.error === "Session ID is not associated with this game") {
+                        setShowPopup(true);
+                    }
+                } else {
+                    console.log("Fetched game data:", data);
+                    setGameData(data);
+                }
+            } catch (error) {
+                console.error("Error fetching game data:", error);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        const fetchLocations = async () => {
+            try {
+                const response = await fetch("/api/locations");
+                const data = await response.json();
+                setLocations(data);
+            } catch (error) {
+                console.error("Error fetching locations:", error);
+            }
+        };
+
+        fetchGameData();
+        fetchLocations();
+
+    }, [gameCode]);
+
+    useEffect(() => {
+        socket.on("updateGameData", (gameData) => {
+            if (!gameData) {
+                console.log("Received empty game data");
+            }
+
+            // Merging existing game data with the new players array
+            setGameData((prevGameData) => ({
+                ...prevGameData,
+                players: gameData.players,
+            }));
+
+            console.log("Player update:", gameData);
+        });
+
+        socket.on("kickedFromRoom", () => {
+            console.log("kicking happening");
+            alert("You were kicked from this game room");
+            setTimeout(() => {
+                window.location.href = "https://tabletrouble.com/spyx/";
+            }, 2000);
+        });
+
+        // Cleanup on unmount
+        return () => {
+            socket.off("updateGameData");
+            socket.off("kickedFromRoom");
+        };
+    }, []);
+
+
+    // Show loading state while fetching data or no game data
+    if (loading || (!gameData && !showPopup)) {
+        return <p>Loading game data...</p>;
+    }
+
+    if (showPopup) {
+        return <NameInputPopup
+            playerName={playerName}
+            setPlayerName={setPlayerName}
+            gameCode={gameCode}
+            handleJoinGame={{
+                gameCode,
+                setGameData,
+                setShowPopup,
+            }}
+        />;
+    }
+
+    if (!gameData || !gameData.players) {
+        return <p>Error: Unable to fetch game data. Please try again later.</p>;
+    }
+
+    return (
+        <div className="game-container">
+            <div className="game-main">
+                <div className="location-wrapper">
+                    <div className="locations-grid">
+                        {locations.map((location) => (
+                            <div
+                                key={location.id}
+                                className={`location-card ${selectedLocations[location.id] ? 'selected' : ''}`}
+                                onClick={() => setSelectedLocations((prev) => ({
+                                    ...prev,
+                                    [location.id]: !prev[location.id],
+                                }))}
+                            >
+                                <img
+                                    src={`assets/${location.location_picture}`}
+                                    alt={location.name}
+                                    className="location-image"
+                                />
+                                <h3 className="location-name">
+                                    {location.name}
+                                </h3>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+
+            <GameSidebar gameData={gameData} setGameData={setGameData} locations={locations} />
+        </div>
+    );
+
+
+};
+
+export default GameRoom;
