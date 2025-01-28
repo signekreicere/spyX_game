@@ -118,7 +118,7 @@ const GameRoom = () => {
                                 }))}
                             >
                                 <img
-                                    src={`assets/${location.location_picture}`}
+                                    src={`assets/locations/${location.location_picture}`}
                                     alt={location.name}
                                     className="location-image"
                                 />
