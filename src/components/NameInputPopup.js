@@ -1,23 +1,22 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import socket from "../socket";
 
 const NameInputPopup = ({ gameCode, playerName, setPlayerName, handleJoinGame }) => {
     const [feedbackMessage, setFeedbackMessage] = useState("");
     const [isNameValid, setIsNameValid] = useState(false);
 
-    const isValidPlayerName = (name) => {
+    useEffect(() => {
+        const storedName = localStorage.getItem("spyx_name");
+        if (storedName) {
+            setPlayerName(storedName);
+            validateName(storedName);
+        }
+    }, []);
+
+    const validateName = (name) => {
         const lengthIsValid = name.length >= 3 && name.length <= 15;
         const noSpecialChars = /^[a-zA-Z0-9 ]*$/.test(name);
         const noLeadingSpace = !name.startsWith(" ");
-        return { lengthIsValid, noSpecialChars, noLeadingSpace };
-    };
-
-    const handleInputChange = (e) => {
-        const newValue = e.target.value;
-        setPlayerName(newValue);
-
-        const { lengthIsValid, noSpecialChars, noLeadingSpace } =
-            isValidPlayerName(newValue);
 
         if (!lengthIsValid) {
             setIsNameValid(false);
@@ -32,6 +31,12 @@ const NameInputPopup = ({ gameCode, playerName, setPlayerName, handleJoinGame })
             setIsNameValid(true);
             setFeedbackMessage("");
         }
+    };
+
+    const handleInputChange = (e) => {
+        const newValue = e.target.value;
+        setPlayerName(newValue);
+        validateName(newValue);
     };
 
     const handlePopupJoin = async () => {
@@ -54,6 +59,8 @@ const NameInputPopup = ({ gameCode, playerName, setPlayerName, handleJoinGame })
 
                     const player = data.players.find(player => player.player_session_id === data.sessionId);
                     const playerName = player ? player.player_name : '';
+
+                    localStorage.setItem("spyx_name", playerName);
 
                     socket.emit("joinRoom", {
                         gameCode: data.game_code,

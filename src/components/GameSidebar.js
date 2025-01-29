@@ -2,12 +2,12 @@ import React, { useEffect, useState } from "react";
 import socket from "../socket";
 
 const GameSidebar = ({ gameData, setGameData, locations }) => {
-    const [waitingMessage, setWaitingMessage] = useState("Waiting for your fate...");
     const [showRole, setShowRole] = useState(false);
     const [isButtonDisabled, setIsButtonDisabled] = useState(true);
-    const [buttonLabel, setButtonLabel] = useState("Start Game");
-    const [messageClass, setMessageClass] = useState("");
-    const [buttonClass, setButtonClass] = useState("");
+    const [startButtonLabel, setStartButtonLabel] = useState("Start Game");
+    const [roleButtonLabel, setRoleButtonLabel] = useState("Show Role");
+    const [roleButtonClass, setRoleButtonClass] = useState("");
+    const [showCopiedMessage, setShowCopiedMessage] = useState(false);
 
     const handleKickPlayer = async (playerSessionId) => {
         try {
@@ -42,8 +42,12 @@ const GameSidebar = ({ gameData, setGameData, locations }) => {
     const copyToClipboard = () => {
         const currentUrl = window.location.href;
         navigator.clipboard.writeText(currentUrl)
-            .then(() => alert("Room URL copied to clipboard!"))
-            .catch((err) => console.error("Error copying text to clipboard", err));
+            .then(() => {
+                setShowCopiedMessage(true);
+                setTimeout(() => {
+                    setShowCopiedMessage(false);
+                }, 1000);
+            })
     };
 
     const handleStartGame = () => {
@@ -52,22 +56,15 @@ const GameSidebar = ({ gameData, setGameData, locations }) => {
             locations: locations,
         });
 
-        setButtonLabel("Restart Game");
+        setStartButtonLabel("Restart Game");
 
-        socket.emit("startGameFeedback", {
-            waitingMessage: "Your fate has been determined...",
-            messageClass: "role-assigned",
+        document.querySelectorAll(".location-card").forEach(card => {
+            card.classList.remove("selected");
         });
-
-        setTimeout(() => {
-            setMessageClass("");
-            setWaitingMessage("");
-        }, 5000);
     };
 
 
     useEffect(() => {
-        // Listen for role assignment updates
         socket.on("roleAssigned", ({ updatedPlayers }) => {
             setGameData((prevGameData) => ({
                 ...prevGameData,
@@ -75,18 +72,29 @@ const GameSidebar = ({ gameData, setGameData, locations }) => {
             }));
 
             setIsButtonDisabled(false);
+
+            document.querySelectorAll(".location-card").forEach(card => {
+                card.classList.remove("current");
+            });
+
+            updatedPlayers.forEach(player => {
+                if (player.player_session_id === gameData.sessionId && player.location?.id) {
+                    const locationId = player.location.id;
+                    const targetLocationElement = document.getElementById(`spyx-location-${locationId}`);
+                    if (targetLocationElement) {
+                        targetLocationElement.classList.add("current");
+                    }
+                }
+            });
         });
 
-        socket.on("startGameFeedback", ({ waitingMessage, messageClass }) => {
-            setWaitingMessage(waitingMessage);
-            setMessageClass(messageClass);
-
-            setButtonClass("fade-effect");
+        socket.on("startGameFeedback", ({ waitingMessage }) => {
+            setRoleButtonLabel(waitingMessage);
+            setRoleButtonClass("fade-effect");
 
             setTimeout(() => {
-                setMessageClass("");
-                setWaitingMessage("");
-                setButtonClass("");
+                setRoleButtonLabel(showRole ? "Hide Role" : "Show Role");
+                setRoleButtonClass("");
             }, 3000);
         });
 
@@ -94,24 +102,41 @@ const GameSidebar = ({ gameData, setGameData, locations }) => {
             socket.off("roleAssigned");
             socket.off("startGameFeedback");
         };
-    }, [setGameData]);
-
+    }, [setGameData, showRole]);
 
 
     const toggleRoleVisibility = () => {
-        setShowRole((prev) => !prev);
+        setShowRole((prev) => {
+            const newLabel = !prev ? "Hide Role" : "Show Role";
+            setRoleButtonLabel(newLabel);
+
+            console.log("Role button toggled. New label:", newLabel);
+            return !prev;
+        });
     };
 
     const canAssignRoles = gameData.players.length >= 2;
 
     return (
         <div className="sidebar">
-            <div id="room-code">
+            <div class="sidebar-item" id="room-code">
                 Room Code: <span>{gameData.game_code}</span>
-                <img src="assets/copy.svg" alt="Copy URL" onClick={copyToClipboard} />
+                <div style={{ position: "relative", display: "inline-block" }}>
+                    <img
+                        src="assets/copy.svg"
+                        alt="Copy URL"
+                        onClick={copyToClipboard}
+                        style={{ cursor: "pointer" }}
+                    />
+                    {showCopiedMessage && (
+                        <div className="copied-message">
+                            Copied!
+                        </div>
+                    )}
+                </div>
             </div>
 
-            <div id="room-players">
+            <div class="sidebar-item" id="room-players">
                 Players:
                 <ul>
                     {gameData.players.length > 0 ? (
@@ -135,25 +160,25 @@ const GameSidebar = ({ gameData, setGameData, locations }) => {
             </div>
 
             {gameData.isCreator && (
-                <div>
+                <div class="sidebar-item">
                     <button
                         onClick={handleStartGame}
                         disabled={!canAssignRoles}
                         className="start-game-btn"
                     >
-                        {buttonLabel}
+                        {startButtonLabel}
                     </button>
                 </div>
             )}
 
 
-            <div id="room-roles">
+            <div class="sidebar-item" id="room-roles">
                 <button
                     onClick={toggleRoleVisibility}
-                    disabled={isButtonDisabled}
-                    className={`toggle-role-btn ${buttonClass}`}
+                    disabled={isButtonDisabled || roleButtonLabel === "Your fate has been determined"}
+                    className={`toggle-role-btn ${roleButtonClass}`}
                 >
-                    {showRole ? "Hide Role" : "Show Role"}
+                    {roleButtonLabel}
                 </button>
 
                 <div>
@@ -178,7 +203,7 @@ const GameSidebar = ({ gameData, setGameData, locations }) => {
                                     ) : (
                                         <div>
                                             <div id="location" className="location">
-                                                <span className="label">Your location:</span> {player.location}
+                                                <span className="label">Your location:</span> {player.location?.name}
                                             </div>
                                             <div id="role" className="role">
                                                 <span className="label">Your role:</span> {player.role}
@@ -191,12 +216,6 @@ const GameSidebar = ({ gameData, setGameData, locations }) => {
                     )}
                 </div>
 
-
-                {waitingMessage && (
-                    <div className={`role-assignment-message ${messageClass}`}>
-                        {waitingMessage}
-                    </div>
-                )}
             </div>
         </div>
     );

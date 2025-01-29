@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import socket from "../socket";
-import { useLocation } from "react-router-dom";
 
 const HomePage = () => {
     const [playerName, setPlayerName] = useState("");
@@ -9,19 +8,18 @@ const HomePage = () => {
     const [feedbackMessage, setFeedbackMessage] = useState("");
     const navigate = useNavigate();
 
-    const isValidPlayerName = (name) => {
+    useEffect(() => {
+        const storedName = localStorage.getItem("spyx_name");
+        if (storedName) {
+            setPlayerName(storedName);
+            validateName(storedName);
+        }
+    }, []);
+
+    const validateName = (name) => {
         const lengthIsValid = name.length >= 3 && name.length <= 15;
         const noSpecialChars = /^[a-zA-Z0-9 ]*$/.test(name);
         const noLeadingSpace = !name.startsWith(" ");
-        return { lengthIsValid, noSpecialChars, noLeadingSpace };
-    };
-
-    const handleInputChange = (e) => {
-        const newValue = e.target.value;
-        setPlayerName(newValue);
-
-        const { lengthIsValid, noSpecialChars, noLeadingSpace } =
-            isValidPlayerName(newValue);
 
         if (!lengthIsValid) {
             setIsNameValid(false);
@@ -38,6 +36,12 @@ const HomePage = () => {
         }
     };
 
+    const handleInputChange = (e) => {
+        const newValue = e.target.value;
+        setPlayerName(newValue);
+        validateName(newValue);
+    };
+
     const handleCreateGame = async () => {
         if (isNameValid) {
             try {
@@ -51,12 +55,15 @@ const HomePage = () => {
 
                 if (data.gameCode) {
                     console.log("Game created:", data);
+
+                    localStorage.setItem("spyx_name", playerName);
+
                     navigate(`/spyx/${data.gameCode}`);
 
                     socket.emit("joinRoom", {
                         gameCode: data.gameCode,
                         playerName: data.playerName,
-                        sessionId: data.sessionId
+                        sessionId: data.sessionId,
                     });
                 } else {
                     setFeedbackMessage("Error creating the game.");

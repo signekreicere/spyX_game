@@ -195,7 +195,6 @@ app.post('/api/join-game', (req, res) => {
             // Fetch the updated player list
             const fetchPlayersQuery = `
                 SELECT 
---                     p.id AS player_id, 
                        p.name AS player_name, p.session_id AS player_session_id
                 FROM spyx_players p
                 WHERE p.game_id = ?;
@@ -214,7 +213,6 @@ app.post('/api/join-game', (req, res) => {
                     creator_session_id: gameResult[0].creator_session_id,
                     isCreator: gameResult[0].creator_session_id === sessionId,
                     players: players.map(player => ({
-                        // player_id: player.player_id,
                         player_name: player.player_name,
                         player_session_id: player.player_session_id,
                     })),
@@ -476,9 +474,6 @@ io.on("connection", (socket) => {
         }
     });
 
-
-
-
     socket.on("assignRoles", ({ gameCode, locations }) => {
         const players = rooms[gameCode];
 
@@ -524,7 +519,10 @@ io.on("connection", (socket) => {
                 return {
                     ...player,
                     role: isSpy ? "Spy" : assignedRole,
-                    location: isSpy ? null : commonLocation.name,
+                    location: isSpy ? null : {
+                        name: commonLocation.name,
+                        id: commonLocation.id,
+                    },
                 };
             });
 
@@ -538,15 +536,11 @@ io.on("connection", (socket) => {
 
             // Emit the startGameFeedback event to all players
             io.to(gameCode).emit("startGameFeedback", {
-                waitingMessage: "Your fate has been determined.",
+                waitingMessage: "Your fate has been determined",
                 messageClass: "role-assigned",
             });
         });
     });
-
-
-
-
 
     socket.on("disconnect", () => {
         console.log("A player disconnected: ", socket.id);

@@ -111,13 +111,26 @@ const GameRoom = () => {
                         {locations.map((location) => (
                             <div
                                 key={location.id}
-                                className={`location-card ${selectedLocations[location.id] ? 'selected' : ''}`}
-                                onClick={() => setSelectedLocations((prev) => ({
-                                    ...prev,
-                                    [location.id]: !prev[location.id],
-                                }))}
+                                id={`spyx-location-${location.id}`}
+                                className={`location-card 
+                                    ${selectedLocations[location.id] ? 'selected' : ''} 
+                                    ${document.getElementById(`spyx-location-${location.id}`)?.classList.contains('current') ? 'current' : ''}
+                                `}
+                                onClick={(e) => {
+                                    const hasCurrentClass = e.currentTarget.classList.contains('current');
+                                    const isSelected = selectedLocations[location.id];
+
+                                    setSelectedLocations((prev) => {
+                                        const newState = {
+                                            ...prev,
+                                            [location.id]: !prev[location.id],
+                                        };
+                                        return newState;
+                                    });
+                                }}
                             >
-                                <img
+
+                            <img
                                     src={`assets/locations/${location.location_picture}`}
                                     alt={location.name}
                                     className="location-image"
