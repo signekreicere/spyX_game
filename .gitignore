@@ -6,10 +6,8 @@ build/
 
 # Environment files
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.staging
+.env.production
 
 # IDE specific files
 .vscode/

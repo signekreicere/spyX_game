@@ -68,8 +68,11 @@ const GameRoom = () => {
         socket.on("kickedFromRoom", () => {
             console.log("kicking happening");
             alert("You were kicked from this game room");
+
+            const BASE_URL = process.env.REACT_APP_BASE_URL || "https://tabletrouble.com/spyx/";
+
             setTimeout(() => {
-                window.location.href = "https://tabletrouble.com/spyx/";
+                window.location.href = BASE_URL;
             }, 2000);
         });
 

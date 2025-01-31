@@ -1,3 +1,7 @@
+require('dotenv').config({
+    path: process.env.NODE_ENV === 'staging' ? '.env.staging' : '.env.production'
+});
+
 const express = require('express');
 const http = require('http');
 const dbConnection = require('./db');
@@ -8,20 +12,33 @@ const socketIo = require('socket.io');
 const app = express();
 const server = http.createServer(app);
 
+const allowedOrigins = ['https://tabletrouble.com', 'https://staging.tabletrouble.com'];
+
 const corsOptions = {
-    origin: 'https://tabletrouble.com',
+    origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     methods: ['GET', 'POST'],
     allowedHeaders: ['Content-Type'],
     credentials: true,
 };
 
-const io = socketIo(server, {
-    cors: corsOptions,
-});
-
+app.use(cors(corsOptions));
 app.use(cookieParser());
 app.use(express.json());
-app.use(cors(corsOptions));
+
+const io = socketIo(server, {
+    cors: {
+        origin: allowedOrigins,
+        methods: ['GET', 'POST'],
+        allowedHeaders: ['Content-Type'],
+        credentials: true,
+    }
+});
 
 const sanitizeName = (name) => {
     return name.trim().replace(/[^a-zA-Z0-9 ]/g, "");
@@ -555,7 +572,8 @@ io.on("connection", (socket) => {
 
 
 
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || (process.env.NODE_ENV === 'staging' ? 4000 : 3000);
+
 server.listen(port, () => {
-    console.log(`Server running on port ${port}`);
+    console.log(`Server running on port ${port} (${process.env.NODE_ENV} mode)`);
 });
