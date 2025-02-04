@@ -53,7 +53,6 @@ const NameInputPopup = ({ gameCode, playerName, setPlayerName, handleJoinGame })
                 if (data.error) {
                     setFeedbackMessage(data.error);
                 } else {
-                    console.log("Player joined the game:", data);
                     handleJoinGame.setGameData(data);
                     handleJoinGame.setShowPopup(false);
 

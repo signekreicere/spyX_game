@@ -8,9 +8,13 @@ const dbConnection = require('./db');
 const cookieParser = require('cookie-parser');
 const cors = require('cors');
 const socketIo = require('socket.io');
+const redis = require("redis");
 
 const app = express();
 const server = http.createServer(app);
+const redisClient = redis.createClient();
+
+redisClient.connect();
 
 const allowedOrigins = ['https://tabletrouble.com', 'https://staging.tabletrouble.com'];
 
@@ -95,7 +99,7 @@ app.post('/api/create-game', (req, res) => {
                     return res.status(500).json({ error: 'Error updating creator_id' });
                 }
 
-                console.log(`Game Room Created: Game Code - ${gameCode}, Player - ${sanitizedPlayerName}, Session ID - ${sessionId}`);
+                // console.log(`DB: Game Room Created: Game Code - ${gameCode}, Player - ${sanitizedPlayerName}, Session ID - ${sessionId}`);
 
                 res.cookie('session_id', sessionId, {
                     httpOnly: true,
@@ -167,7 +171,7 @@ app.get('/api/game/:gameCode', (req, res) => {
             return res.status(400).json({ error: 'Session ID is not associated with this game' });
         }
 
-        console.log('Constructed game data:', gameData);
+        // console.log('DB: Constructed game data:', gameData);
 
         res.status(200).json(gameData);
     });
@@ -241,7 +245,7 @@ app.post('/api/join-game', (req, res) => {
                     sameSite: 'Strict',
                 });
 
-                console.log('Player joined. Constructed game data:', gameData);
+                // console.log('DB: Player joined. Constructed game data:', gameData);
 
                 // Respond with the game data and the new player info
                 res.status(200).json(gameData);
@@ -319,7 +323,7 @@ app.post('/api/kick-player', (req, res) => {
                     })),
                 };
 
-                console.log('Player kicked. Constructed game data:', gameData);
+                // console.log('DB: Player kicked. Constructed game data:', gameData);
 
                 res.status(200).json({
                     success: true,
@@ -330,180 +334,166 @@ app.post('/api/kick-player', (req, res) => {
     });
 });
 
-app.get('/api/locations', (req, res) => {
-    const query = 'SELECT * FROM spyx_locations';
 
-    dbConnection.query(query, (err, result) => {
+app.get('/api/locations', (req, res) => {
+    dbConnection.query('SELECT * FROM spyx_locations', (err, result) => {
         if (err) {
             console.error('Error fetching locations:', err);
             return res.status(500).json({ error: 'Error fetching locations' });
         }
-
-        res.status(200).json(result);
+        res.json(result);
     });
 });
 
+app.get("/api/player-info", async (req, res) => {
+    const { gameCode, sessionId } = req.query;
 
-let rooms = {};
+    let room = await getRoomFromRedis(gameCode);
+    let player = room?.players.find(p => p.player_session_id === sessionId);
 
-// Retrieves the game code and player's name based on their session ID
-const getGameCodeFromSession = (sessionId) => {
-    return new Promise((resolve, reject) => {
-        const query = `
-            SELECT g.game_code, p.name AS player_name
-            FROM spyx_players p
-            JOIN spyx_games g ON p.game_id = g.id
-            WHERE p.session_id = ?
-        `;
+    if (!player) {
+        return res.status(404).json({ error: "Player not found" });
+    }
 
-        dbConnection.query(query, [sessionId], (err, result) => {
-            if (err) {
-                console.error("Error fetching game code and player name:", err);
-                return reject(err);
-            }
+    res.json({ role: player.role, location: player.location });
+});
 
-            if (result.length > 0) {
-                resolve({
-                    gameCode: result[0].game_code,
-                    playerName: result[0].player_name,
-                });
-            } else {
-                reject("Game code and player name not found for session ID: " + sessionId);
-            }
-        });
-    });
-};
+
+const cookie = require("cookie");
 
 const getRandomLocation = (locations) => {
     const randomIndex = Math.floor(Math.random() * locations.length);
     return locations[randomIndex];
 };
 
-io.on("connection", (socket) => {
-    console.log("A player connected: ", socket.id);
+const getRoomFromRedis = async (gameCode) => {
+    const data = await redisClient.get(`room:${gameCode}`);
+    return data ? JSON.parse(data) : null;
+};
 
-    const parsedCookies = socket.request.headers.cookie
-        ? socket.request.headers.cookie.split(';').reduce((acc, cookie) => {
-            const [name, value] = cookie.trim().split('=');
-            acc[name] = value;
-            return acc;
-        }, {})
-        : {};
+const storeRoomInRedis = async (gameCode, roomData) => {
+    roomData.last_updated = Date.now();
+    await redisClient.setEx(`room:${gameCode}`, 1800, JSON.stringify(roomData));
+};
 
-    const sessionIdFromCookie = parsedCookies.session_id;
-    console.log("sessionIdFromCookie:", sessionIdFromCookie);
+const deleteRoomFromRedis = async (gameCode) => {
+    await redisClient.del(`room:${gameCode}`);
+};
 
-    if (sessionIdFromCookie) {
-        // Retrieve the gameCode and playerName using the session ID
-        getGameCodeFromSession(sessionIdFromCookie)
-            .then(({ gameCode, playerName }) => {
+io.on("connection", async (socket) => {
+    console.log("A player connected, socketID:", socket.id);
 
-                if (gameCode && !rooms[gameCode]) {
-                    rooms[gameCode] = [];
+    if (socket.request.headers.cookie) {
+        const parsedCookies = cookie.parse(socket.request.headers.cookie);
+        const sessionIdFromCookie = parsedCookies.session_id || null;
+        console.log("sessionIdFromCookie:", sessionIdFromCookie);
+
+        if (sessionIdFromCookie) {
+            const keys = await redisClient.keys("room:*");
+
+            for (let key of keys) {
+                let roomData = await getRoomFromRedis(key.replace("room:", ""));
+                if (!roomData) continue;
+
+                let player = roomData.players.find(p => p.player_session_id === sessionIdFromCookie);   // Check if the player exists in this room
+
+                if (player) {
+                    console.log(`Reconnecting player ${player.player_name} to room ${roomData.game_code}`);
+
+                    player.socketId = socket.id;
+
+                    await storeRoomInRedis(roomData.game_code, roomData);
+
+                    socket.join(roomData.game_code);    // Rejoin the room
+
+                    io.to(roomData.game_code).emit("updateGameData", { gameCode: roomData.game_code, players: roomData.players });
+
+                    break;
                 }
-
-                // Update players socketId
-                if (gameCode) {
-
-                    rooms[gameCode].forEach(player => {
-                        if (player.player_session_id === sessionIdFromCookie) {
-                            player.socketId = socket.id;
-                            console.log("Updated player's socketId:", player);
-                        }
-                    });
-                }
-
-                // Push the new player
-                const newPlayer = {
-                    player_name: playerName,
-                    player_session_id: sessionIdFromCookie,
-                    socketId: socket.id,
-                };
-                rooms[gameCode].push(newPlayer);
-                console.log("Added new player:", newPlayer);
-
-                socket.join(gameCode);
-
-            })
-            .catch((error) => {
-                console.log("Error retrieving game code:", error);
-            });
-    } else {
-        console.log('New player connected: No session ID found!', socket.id);
+            }
+        }
     }
 
+    socket.on("joinRoom", async ({ gameCode, playerName, sessionId }) => {
+        console.log(`Player ${playerName} with session ${sessionId} is joining room ${gameCode}`);
 
-    socket.on("joinRoom", ({ gameCode, playerName, sessionId }) => {
-        console.log(`Player ${playerName} with session ${sessionId} joined room ${gameCode}`);
+        let room = await redisClient.get(`room:${gameCode}`);
+        room = room ? JSON.parse(room) : null;
 
-        if (!rooms[gameCode]) {
-            rooms[gameCode] = [];
+        if (!room) {
+            room = {
+                game_code: gameCode,
+                creator_session_id: sessionId,
+                players: [],
+                last_updated: Date.now()
+            };
         }
 
-        // Adjust for expected data format
-        const newPlayer = {
-            player_name: playerName,
-            player_session_id: sessionId,
-            socketId: socket.id,
-        };
+        const existingPlayer = room.players.find(player => player.player_session_id === sessionId);     // Safety check if the player is not already in the room
+        if (!existingPlayer) {
+            room.players.push({
+                player_name: playerName,
+                player_session_id: sessionId,
+                socketId: socket.id
+            });
 
-        rooms[gameCode].push(newPlayer);
+            room.last_updated = Date.now();
+
+            await storeRoomInRedis(gameCode, room);
+        }
+
         socket.join(gameCode);
 
-        const gameData = {
-            gameCode,
-            players: rooms[gameCode],
-        };
+        io.to(gameCode).emit("updateGameData", { gameCode, players: room.players });
 
-        console.log(`Websocket join triggered. Current players in room ${gameCode}:`, rooms[gameCode]);
-
-        io.to(gameCode).emit("updateGameData", gameData);
+        console.log(`Updated room ${gameCode} in Redis:`, room);
     });
 
-    socket.on("kickPlayer", ({ gameCode, playerSessionId }) => {
-        console.log(`Attempting to kick player with session ${playerSessionId} from room ${gameCode}`);
+    socket.on("kickPlayer", async ({ gameCode, playerSessionId }) => {
+        console.log(`Attempting to kick player ${playerSessionId} from room ${gameCode}`);
 
-        const playerToKick = rooms[gameCode].find(player => player.player_session_id === playerSessionId);
+        let room = await getRoomFromRedis(gameCode);
+        if (!room) return;
 
-        console.log("playerToKick: ", playerToKick);
+        const playerToKick = room.players.find(player => player.player_session_id === playerSessionId);
+
         if (playerToKick) {
-            const socketIdToKick = playerToKick.socketId;
+            io.to(playerToKick.socketId).emit("kickedFromRoom");
 
-            if (socketIdToKick) {
-                io.to(socketIdToKick).emit("kickedFromRoom");
+            room.players = room.players.filter(player => player.player_session_id !== playerSessionId);
 
-                rooms[gameCode] = rooms[gameCode].filter(player => player.player_session_id !== playerSessionId);
-
-                const gameData = {
-                    gameCode,
-                    players: rooms[gameCode],
-                };
-
-                io.to(gameCode).emit("updateGameData", gameData);
-
-                console.log(`Player with session ${playerSessionId} has been kicked from room ${gameCode}`);
+            if (room.players.length === 0) {
+                console.log(`Room ${gameCode} is now empty. Deleting...`);
+                await deleteRoomFromRedis(gameCode);
             } else {
-                console.error(`No socket ID found for player with session ${playerSessionId}`);
+                room.last_updated = Date.now();
+                await storeRoomInRedis(gameCode, room);
+
+                console.log(`Updated room ${gameCode} in Redis after kick:`, room);
             }
 
+            io.to(gameCode).emit("updateGameData", { gameCode, players: room.players });
+
         } else {
-            console.error("Player not found in the room.");
+            console.error(`Player ${playerSessionId} not found in room ${gameCode}`);
         }
     });
 
-    socket.on("assignRoles", ({ gameCode, locations }) => {
-        const players = rooms[gameCode];
-
+    socket.on("assignRoles", async ({ gameCode, locations }) => {
         console.log("Assigning roles for game:", gameCode);
+
+        let room = await getRoomFromRedis(gameCode);
+        if (!room) {
+            console.error(`Room ${gameCode} not found in Redis.`);
+            return;
+        }
+
+        const players = room.players;
         console.log("Players in the game:", players);
-        console.log("Locations received from frontend:", locations);
+        // console.log("Locations received from frontend:", locations);
 
         if (!locations || locations.length === 0) {
             console.error("No locations received!");
-            io.to(gameCode).emit("roleAssigned", {
-                message: "No locations available. Please try again later.",
-                updatedPlayers: players,
-            });
             return;
         }
 
@@ -514,13 +504,13 @@ io.on("connection", (socket) => {
         console.log("Spy player selected:", spyPlayer.player_name);
 
         const query = 'SELECT * FROM spyx_roles WHERE location_id = ?';
-        dbConnection.query(query, [commonLocation.id], (err, roles) => {
+        dbConnection.query(query, [commonLocation.id], async (err, roles) => {
             if (err) {
                 console.error("Error fetching roles for location:", err);
                 return;
             }
 
-            console.log(`Roles for location (id: ${commonLocation.id}):`, roles);
+            // console.log(`Roles for location (id: ${commonLocation.id}):`, roles);
 
             const shuffledRoles = [...roles].sort(() => Math.random() - 0.5);
 
@@ -543,33 +533,25 @@ io.on("connection", (socket) => {
                 };
             });
 
-            rooms[gameCode] = updatedPlayers;
+            room.players = updatedPlayers;
+            room.last_updated = Date.now();
+            await storeRoomInRedis(gameCode, room);
 
-            io.to(gameCode).emit("roleAssigned", {
-                updatedPlayers: updatedPlayers,
+            io.to(gameCode).emit("updateGameData", {
+                gameCode,
+                players: updatedPlayers,
             });
 
             console.log("Updated players with roles and locations:", updatedPlayers);
 
-            // Emit the startGameFeedback event to all players
             io.to(gameCode).emit("startGameFeedback", {
                 waitingMessage: "Your fate has been determined",
                 messageClass: "role-assigned",
+                updatedPlayers: updatedPlayers,
             });
         });
     });
-
-    socket.on("disconnect", () => {
-        console.log("A player disconnected: ", socket.id);
-
-        for (let gameCode in rooms) {
-            rooms[gameCode] = rooms[gameCode].filter(player => player.socketId !== socket.id);
-        }
-    });
 });
-
-
-
 
 
 const port = process.env.PORT || (process.env.NODE_ENV === 'staging' ? 4000 : 3000);

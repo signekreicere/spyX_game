@@ -13,6 +13,35 @@ const GameRoom = () => {
     const [showPopup, setShowPopup] = React.useState(false);
     const [playerName, setPlayerName] = React.useState("");
 
+    const handleKickPlayer = async (playerSessionId) => {
+        try {
+            const response = await fetch("/api/kick-player", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ playerSessionId, gameCode: gameData.game_code }),
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+
+                setGameData((prevGameData) => ({
+                    ...prevGameData,
+                    players: data.updatedGameData.players,
+                }));
+
+                socket.emit("kickPlayer", {
+                    gameCode: gameData.game_code,
+                    playerSessionId: playerSessionId,
+                });
+            } else {
+                console.error("Error kicking player:", data.error);
+            }
+        } catch (error) {
+            console.error("Error kicking player:", error);
+        }
+    };
+
     useEffect(() => {
         const fetchGameData = async () => {
             try {
@@ -25,7 +54,6 @@ const GameRoom = () => {
                         setShowPopup(true);
                     }
                 } else {
-                    console.log("Fetched game data:", data);
                     setGameData(data);
                 }
             } catch (error) {
@@ -52,21 +80,14 @@ const GameRoom = () => {
 
     useEffect(() => {
         socket.on("updateGameData", (gameData) => {
-            if (!gameData) {
-                console.log("Received empty game data");
-            }
-
             // Merging existing game data with the new players array
             setGameData((prevGameData) => ({
                 ...prevGameData,
                 players: gameData.players,
             }));
-
-            console.log("Player update:", gameData);
         });
 
         socket.on("kickedFromRoom", () => {
-            console.log("kicking happening");
             alert("You were kicked from this game room");
 
             const BASE_URL = process.env.REACT_APP_BASE_URL || "https://tabletrouble.com/spyx/";
@@ -147,7 +168,7 @@ const GameRoom = () => {
                 </div>
             </div>
 
-            <GameSidebar gameData={gameData} setGameData={setGameData} locations={locations} />
+            <GameSidebar gameData={gameData} handleKickPlayer={handleKickPlayer} locations={locations}/>
         </div>
     );
 

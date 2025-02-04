@@ -1,43 +1,82 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import socket from "../socket";
 
-const GameSidebar = ({ gameData, setGameData, locations }) => {
-    const [showRole, setShowRole] = useState(false);
-    const [isButtonDisabled, setIsButtonDisabled] = useState(true);
-    const [startButtonLabel, setStartButtonLabel] = useState("Start Game");
-    const [roleButtonLabel, setRoleButtonLabel] = useState("Show Role");
-    const [roleButtonClass, setRoleButtonClass] = useState("");
+const GameSidebar = ({ gameData, handleKickPlayer, locations }) => {
     const [showCopiedMessage, setShowCopiedMessage] = useState(false);
+    const [startButtonLabel, setStartButtonLabel] = useState("Start Game");
+    const [playerRole, setPlayerRole] = useState(null);
+    const [playerLocation, setPlayerLocation] = useState(null);
+    const isAssigningRolesRef = useRef(false);
 
-    const handleKickPlayer = async (playerSessionId) => {
-        try {
-            const response = await fetch("/api/kick-player", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ playerSessionId, gameCode: gameData.game_code }),
+    const [roleState, setRoleState] = useState({
+        showRole: localStorage.getItem("showRole") === "true",
+        buttonDisabled: true,
+        buttonClass: "",
+        buttonLabel: localStorage.getItem("showRole") === "true" ? "Hide Role" : "Show Role",
+    });
+
+    const updateRoleButton = (show, disabled, label, fadeEffect = false) => {
+        setRoleState(prev => ({
+            ...prev,
+            showRole: show,
+            buttonDisabled: disabled,
+            buttonLabel: label,
+            buttonClass: fadeEffect ? "fade-effect" : "",
+        }));
+    };
+
+    useEffect(() => {
+        const fetchPlayerData = async () => {
+            try {
+                const response = await fetch(`/api/player-info?gameCode=${gameData.game_code}&sessionId=${gameData.sessionId}`);
+                const playerData = await response.json();
+
+                if (playerData.role) {
+                    setPlayerRole(playerData.role);
+                    setPlayerLocation(playerData.location);
+                    setStartButtonLabel("Restart Game");
+
+                    if (!isAssigningRolesRef.current && localStorage.getItem("showRole") === "true") {
+                        updateRoleButton(true, false, "Hide Role");
+                    }
+                }
+            } catch (error) {
+                console.error("Error fetching player role and location:", error);
+            }
+        };
+
+        if (gameData?.game_code && gameData?.sessionId) {
+            fetchPlayerData();
+        }
+
+        socket.on("startGameFeedback", (data) => {
+            document.querySelectorAll(".location-card").forEach(card => {
+                card.classList.remove("current");
+                card.classList.remove("selected");
             });
 
-            const data = await response.json();
+            const currentPlayer = gameData.players.find(
+                (player) => player.player_session_id === gameData.sessionId
+            );
 
-            if (data.success) {
-                console.log("Player kicked successfully.");
-
-                setGameData((prevGameData) => ({
-                    ...prevGameData,
-                    players: data.updatedGameData.players,
-                }));
-
-                socket.emit("kickPlayer", {
-                    gameCode: gameData.game_code,
-                    playerSessionId: playerSessionId,
-                });
-            } else {
-                console.error("Error kicking player:", data.error);
+            if (currentPlayer) {
+                setPlayerRole(currentPlayer.role);
+                setPlayerLocation(currentPlayer.location);
             }
-        } catch (error) {
-            console.error("Error kicking player:", error);
-        }
-    };
+
+            isAssigningRolesRef.current = true;
+            updateRoleButton(roleState.showRole, true, "Your fate has been determined", true);
+
+            setTimeout(() => {
+                isAssigningRolesRef.current = false;
+                updateRoleButton(roleState.showRole, false, roleState.showRole ? "Hide Role" : "Show Role");
+            }, 3000);
+        });
+
+        return () => {
+            socket.off("startGameFeedback");
+        };
+    }, [gameData]);
 
     const copyToClipboard = () => {
         const currentUrl = window.location.href;
@@ -50,76 +89,36 @@ const GameSidebar = ({ gameData, setGameData, locations }) => {
             })
     };
 
+    const canAssignRoles = gameData.players.length >= 2;
+
     const handleStartGame = () => {
         socket.emit("assignRoles", {
             gameCode: gameData.game_code,
-            locations: locations,
+            locations: locations
         });
 
         setStartButtonLabel("Restart Game");
-
-        document.querySelectorAll(".location-card").forEach(card => {
-            card.classList.remove("selected");
-        });
     };
-
-
-    useEffect(() => {
-        socket.on("roleAssigned", ({ updatedPlayers }) => {
-            setGameData((prevGameData) => ({
-                ...prevGameData,
-                players: updatedPlayers,
-            }));
-
-            setIsButtonDisabled(false);
-
-            document.querySelectorAll(".location-card").forEach(card => {
-                card.classList.remove("current");
-            });
-
-            updatedPlayers.forEach(player => {
-                if (player.player_session_id === gameData.sessionId && player.location?.id) {
-                    const locationId = player.location.id;
-                    const targetLocationElement = document.getElementById(`spyx-location-${locationId}`);
-                    if (targetLocationElement) {
-                        targetLocationElement.classList.add("current");
-                    }
-                }
-            });
-        });
-
-        socket.on("startGameFeedback", ({ waitingMessage }) => {
-            setRoleButtonLabel(waitingMessage);
-            setRoleButtonClass("fade-effect");
-
-            setTimeout(() => {
-                setRoleButtonLabel(showRole ? "Hide Role" : "Show Role");
-                setRoleButtonClass("");
-            }, 3000);
-        });
-
-        return () => {
-            socket.off("roleAssigned");
-            socket.off("startGameFeedback");
-        };
-    }, [setGameData, showRole]);
-
 
     const toggleRoleVisibility = () => {
-        setShowRole((prev) => {
-            const newLabel = !prev ? "Hide Role" : "Show Role";
-            setRoleButtonLabel(newLabel);
-
-            console.log("Role button toggled. New label:", newLabel);
-            return !prev;
-        });
+        const newState = !roleState.showRole;
+        localStorage.setItem("showRole", newState);
+        updateRoleButton(newState, false, newState ? "Hide Role" : "Show Role");
+        roleVisibilityFnct();
     };
 
-    const canAssignRoles = gameData.players.length >= 2;
+    const roleVisibilityFnct = () => {
+        if (roleState.showRole && playerLocation) {
+            const targetLocationElement = document.getElementById(`spyx-location-${playerLocation.id}`);
+            if (targetLocationElement) {
+                targetLocationElement.classList.add("current");
+            }
+        }
+    };
 
     return (
         <div className="sidebar">
-            <div class="sidebar-item" id="room-code">
+            <div className="sidebar-item" id="room-code">
                 Room Code: <span>{gameData.game_code}</span>
                 <div style={{ position: "relative", display: "inline-block" }}>
                     <img
@@ -136,7 +135,7 @@ const GameSidebar = ({ gameData, setGameData, locations }) => {
                 </div>
             </div>
 
-            <div class="sidebar-item" id="room-players">
+            <div className="sidebar-item" id="room-players">
                 Players:
                 <ul>
                     {gameData.players.length > 0 ? (
@@ -160,7 +159,7 @@ const GameSidebar = ({ gameData, setGameData, locations }) => {
             </div>
 
             {gameData.isCreator && (
-                <div class="sidebar-item">
+                <div className="sidebar-item">
                     <button
                         onClick={handleStartGame}
                         disabled={!canAssignRoles}
@@ -171,51 +170,31 @@ const GameSidebar = ({ gameData, setGameData, locations }) => {
                 </div>
             )}
 
-
-            <div class="sidebar-item" id="room-roles">
+            <div className="sidebar-item" id="room-roles">
                 <button
                     onClick={toggleRoleVisibility}
-                    disabled={isButtonDisabled || roleButtonLabel === "Your fate has been determined"}
-                    className={`toggle-role-btn ${roleButtonClass}`}
+                    className={`toggle-role-btn ${roleState.buttonClass}`}
+                    disabled={roleState.buttonDisabled}
                 >
-                    {roleButtonLabel}
+                    {roleState.buttonLabel}
                 </button>
-
-                <div>
-                    {gameData.players.map((player) =>
-                        player.player_session_id === gameData.sessionId ? (
-                            <div key={player.player_session_id} className="player-role">
-                                {showRole && player.role ? (
-                                    player.role === "Spy" ? (
-                                        <div>
-                                            <div id="role" className="role">
-                                                <span className="label">Your role:</span> You are the Spy!
-                                                <img
-                                                    src="assets/spy.svg"
-                                                    alt="Spy Icon"
-                                                    className="spy-icon"
-                                                />
-                                            </div>
-                                            <div id="location" className="location">
-                                                <span className="label">Your location:</span> No location for you!
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div>
-                                            <div id="location" className="location">
-                                                <span className="label">Your location:</span> {player.location?.name}
-                                            </div>
-                                            <div id="role" className="role">
-                                                <span className="label">Your role:</span> {player.role}
-                                            </div>
-                                        </div>
-                                    )
-                                ) : null}
-                            </div>
-                        ) : null
-                    )}
-                </div>
-
+                {roleState.showRole && playerRole && (
+                    <div className="player-role">
+                        <div id="location" className="location">
+                            <span className="label">Your location:</span> {playerLocation ? playerLocation.name : "No location for you!"}
+                        </div>
+                        <div id="role" className="role">
+                            <span className="label">Your role:</span> {playerRole}
+                            {playerRole === "Spy" && (
+                                <img
+                                    src="assets/spy.svg"
+                                    alt="Spy Icon"
+                                    className="spy-icon"
+                                />
+                            )}
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

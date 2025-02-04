@@ -54,8 +54,6 @@ const HomePage = () => {
                 const data = await response.json();
 
                 if (data.gameCode) {
-                    console.log("Game created:", data);
-
                     localStorage.setItem("spyx_name", playerName);
 
                     navigate(`/spyx/${data.gameCode}`);

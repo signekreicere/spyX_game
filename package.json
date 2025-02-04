@@ -24,8 +24,8 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "build:production": "REACT_APP_SOCKET_URL=https://staging.tabletrouble.com REACT_APP_BASE_URL=https://staging.tabletrouble.com/spyx/ react-scripts build",
+    "build:staging": "REACT_APP_SOCKET_URL=https://tabletrouble.com REACT_APP_BASE_URL=https://tabletrouble.com/spyx/ react-scripts build"
   },
   "eslintConfig": {
     "extends": [
