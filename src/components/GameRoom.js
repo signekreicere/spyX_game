@@ -42,6 +42,28 @@ const GameRoom = () => {
         }
     };
 
+    const shufflePlayers = () => {
+        setGameData(prevGameData => {
+            if (!prevGameData || !prevGameData.players) return prevGameData;
+
+            let shuffledPlayers = [...prevGameData.players];
+
+            let attempts = 10;
+            let originalOrder = JSON.stringify(shuffledPlayers);
+            do {
+                shuffledPlayers = [...shuffledPlayers].sort(() => Math.random() - 0.5);
+                attempts--;
+            } while (JSON.stringify(shuffledPlayers) === originalOrder && attempts > 0);
+
+            socket.emit("shufflePlayers", {
+                gameCode: prevGameData.game_code,
+                shuffledPlayers,
+            });
+
+            return { ...prevGameData, players: shuffledPlayers };
+        });
+    };
+
     useEffect(() => {
         const fetchGameData = async () => {
             try {
@@ -87,20 +109,37 @@ const GameRoom = () => {
             }));
         });
 
+        const BASE_URL = window.location.origin + "/spyx/";
+
         socket.on("kickedFromRoom", () => {
             alert("You were kicked from this game room");
 
-            const BASE_URL = process.env.REACT_APP_BASE_URL || "https://tabletrouble.com/spyx/";
+            setTimeout(() => {
+                window.location.href = BASE_URL;
+            }, 1500);
+        });
+
+        socket.on("updateShuffledPlayers", (data) => {
+            setGameData(prevGameData => ({
+                ...prevGameData,
+                players: data.shuffledPlayers
+            }));
+        });
+
+        socket.on("roomExpired", () => {
+            alert("The game room has expired.");
 
             setTimeout(() => {
                 window.location.href = BASE_URL;
-            }, 2000);
+            }, 1500);
         });
 
         // Cleanup on unmount
         return () => {
             socket.off("updateGameData");
             socket.off("kickedFromRoom");
+            socket.off("updateShuffledPlayers");
+            socket.off("roomExpired");
         };
     }, []);
 
@@ -136,10 +175,11 @@ const GameRoom = () => {
                             <div
                                 key={location.id}
                                 id={`spyx-location-${location.id}`}
-                                className={`location-card 
-                                    ${selectedLocations[location.id] ? 'selected' : ''} 
-                                    ${document.getElementById(`spyx-location-${location.id}`)?.classList.contains('current') ? 'current' : ''}
-                                `}
+                                className={[
+                                    "location-card",
+                                    selectedLocations[location.id] ? "selected" : "",
+                                    document.getElementById(`spyx-location-${location.id}`)?.classList.contains("current") ? "current" : ""
+                                ].filter(Boolean).join(" ")}
                                 onClick={(e) => {
                                     const hasCurrentClass = e.currentTarget.classList.contains('current');
                                     const isSelected = selectedLocations[location.id];
@@ -154,8 +194,8 @@ const GameRoom = () => {
                                 }}
                             >
 
-                            <img
-                                    src={`assets/locations/${location.location_picture}`}
+                                <img
+                                    src={`${process.env.PUBLIC_URL}/assets/locations/${location.location_picture}`}
                                     alt={location.name}
                                     className="location-image"
                                 />
@@ -168,7 +208,12 @@ const GameRoom = () => {
                 </div>
             </div>
 
-            <GameSidebar gameData={gameData} handleKickPlayer={handleKickPlayer} locations={locations}/>
+            <GameSidebar
+                gameData={gameData}
+                shufflePlayers={shufflePlayers}
+                handleKickPlayer={handleKickPlayer}
+                locations={locations}
+            />
         </div>
     );
 

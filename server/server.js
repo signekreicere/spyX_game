@@ -374,6 +374,15 @@ const getRoomFromRedis = async (gameCode) => {
 const storeRoomInRedis = async (gameCode, roomData) => {
     roomData.last_updated = Date.now();
     await redisClient.setEx(`room:${gameCode}`, 1800, JSON.stringify(roomData));
+
+    // Check for room expiration, redirect players
+    setTimeout(async () => {
+        const roomExists = await redisClient.get(`room:${gameCode}`);
+        if (!roomExists) {
+            console.log(`Room ${gameCode} expired, notifying players.`);
+            io.to(gameCode).emit("roomExpired");
+        }
+    }, 1801000);
 };
 
 const deleteRoomFromRedis = async (gameCode) => {
@@ -551,10 +560,30 @@ io.on("connection", async (socket) => {
             });
         });
     });
+
+    socket.on("shufflePlayers", async ({ gameCode, shuffledPlayers }) => {
+        let room = await getRoomFromRedis(gameCode);
+        if (!room) {
+            console.error(`Room ${gameCode} not found in Redis.`);
+            return;
+        }
+
+        room.players = shuffledPlayers;
+        room.last_updated = Date.now();
+        await storeRoomInRedis(gameCode, room);
+
+        console.log("updateGameData from shuffle players")
+        io.to(gameCode).emit("updateGameData", { gameCode, players: shuffledPlayers });
+
+        // console.log(`Updated shuffled players for game ${gameCode}:`, shuffledPlayers);
+    });
+
+
 });
 
 
 const port = process.env.PORT || (process.env.NODE_ENV === 'staging' ? 4000 : 3000);
+const port = process.env.PORT || 3000;
 
 server.listen(port, () => {
     console.log(`Server running on port ${port} (${process.env.NODE_ENV} mode)`);

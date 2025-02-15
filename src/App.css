@@ -6,9 +6,27 @@
   box-sizing: border-box;
 }
 
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #111;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #666;
+}
+
 html, body {
   height: 100%;
   width: 100%;
+  background: black;
 }
 
 .App {
@@ -20,7 +38,7 @@ html, body {
 }
 
 .App-main {
-  height: 90%;
+  height: 85%;
   width: 100%;
   text-align: center;
 }
@@ -41,12 +59,16 @@ h1 {
 .light-mode {
   background-color: #d4d4d4;
   color: #000000;
+}
+.light-mode .header-menu {
 
+  background-color: #b1afaf;
+  border: 1px solid #818181;
 }
 
 .darkmode-btn {
-  height: 50px;
-  width: 50px;
+  height: 40px;
+  width: 40px;
   position: absolute;
   cursor: pointer;
   right: 0;
@@ -116,16 +138,11 @@ h1 {
 /* Header */
 .App-header {
   width: 90%;
-  height: 10%;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 20px;
 }
 
 @media (min-width: 800px ) {
   .App-header {
-    width: 60%;
+    width: 70%;
   }
 }
 @media (min-width: 1000px ) {
@@ -139,11 +156,24 @@ h1 {
   }
 }
 
+.header-menu {
+  background-color: #1f1f1f;
+  border: 1px solid #333;
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 20px;
+  margin: 30px 0;
+  border-radius: 8px;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
 .header-left,
 .header-center,
 .header-right {
   display: flex;
   align-items: center;
+  transition: transform 0.3s;
 }
 .header-right {
   position: relative;
@@ -160,11 +190,23 @@ h1 {
 }
 
 .header-image {
-  width: 50px;
-  height: 50px;
-  margin-right: 10px;
+  width: 40px;
+  height: 40px;
 }
 
+.header-menu div:hover {
+  transform: scale(1.1);
+}
+
+.rules-container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.rules-container h2 {
+  padding: 20px 0;
+}
 
 /* Buttons and Inputs */
 input {
@@ -199,23 +241,6 @@ button:hover:not(:disabled) {
   background: #b64e04;
 }
 
-.kick-btn {
-  background-color: crimson;
-  color: white;
-  border: none;
-  border-radius: 5px;
-  padding: 5px 10px;
-  margin-left: 10px;
-  cursor: pointer;
-  font-size: 0.9rem;
-  margin-top: 0px;
-}
-
-.kick-btn:hover {
-  background-color: darkred !important;
-}
-
-
 /* join game pop up */
 .popup-overlay {
   position: fixed;
@@ -237,6 +262,7 @@ button:hover:not(:disabled) {
   text-align: center;
   max-width: 400px;
   width: 100%;
+  color: white;
 }
 
 
@@ -247,6 +273,16 @@ button:hover:not(:disabled) {
   gap: 20px;
   padding: 20px;
   height:100%;
+}
+
+.join-container {
+  display: flex;
+  height: 100%;
+  width: 100%;
+}
+
+.join-wrap {
+  margin: auto;
 }
 
 .game-main {
@@ -390,14 +426,14 @@ button:hover:not(:disabled) {
   font-weight: 400;
 }
 
-#room-code img {
+#room-code img, .sidebar-item img {
   cursor: pointer;
   margin-left: 10px;
-  width: 15px;
   height: auto;
+  margin-bottom: -2px;
 }
 
-.dark-mode #room-code img {
+.dark-mode #room-code img, .dark-mode .sidebar-item img {
   filter: invert(1);
 }
 
@@ -421,7 +457,7 @@ ul {
 }
 
 .spy-icon {
-  height: 24px;
+  height: 24px !important;
   margin-left: 10px;
   vertical-align: middle;
   margin-top: -5px;

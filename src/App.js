@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { BrowserRouter as Router, Route, Routes } from "react-router-dom";
 import "./App.css";
 import Header from "./components/Header";
 import HomePage from "./components/HomePage";
 import GameRoom from "./components/GameRoom";
+import Rules from "./components/Rules";
 
 function App() {
     const [isDarkMode, setIsDarkMode] = useState(false);
@@ -19,10 +20,8 @@ function App() {
                 <main className="App-main">
                     <Routes>
                         <Route path="/spyx/" element={<HomePage />} />
-                        <Route
-                            path="/spyx/:gameCode"
-                            element={<GameRoom />}
-                        />
+                        <Route path="/spyx/:gameCode" element={<GameRoom />} />
+                        <Route path="/spyx/rules" element={<Rules />} />
                     </Routes>
                 </main>
             </div>

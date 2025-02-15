@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useRef } from "react";
 import socket from "../socket";
+import KickPlayerPopup from "./KickPlayerPopup";
 
-const GameSidebar = ({ gameData, handleKickPlayer, locations }) => {
+const GameSidebar = ({ gameData, handleKickPlayer, shufflePlayers, locations }) => {
     const [showCopiedMessage, setShowCopiedMessage] = useState(false);
     const [startButtonLabel, setStartButtonLabel] = useState("Start Game");
     const [playerRole, setPlayerRole] = useState(null);
@@ -13,7 +14,17 @@ const GameSidebar = ({ gameData, handleKickPlayer, locations }) => {
         buttonDisabled: true,
         buttonClass: "",
         buttonLabel: localStorage.getItem("showRole") === "true" ? "Hide Role" : "Show Role",
+        // highlightedLocation: localStorage.getItem("highlightedLocation")
     });
+
+    const [kickPlayer, setKickPlayer] = useState(null);
+
+    const confirmKick = () => {
+        if (kickPlayer) {
+            handleKickPlayer(kickPlayer);
+            setKickPlayer(null);
+        }
+    };
 
     const updateRoleButton = (show, disabled, label, fadeEffect = false) => {
         setRoleState(prev => ({
@@ -50,20 +61,19 @@ const GameSidebar = ({ gameData, handleKickPlayer, locations }) => {
         }
 
         socket.on("startGameFeedback", (data) => {
-            document.querySelectorAll(".location-card").forEach(card => {
-                card.classList.remove("current");
-                card.classList.remove("selected");
-            });
+            setTimeout(() => {
+                document.querySelectorAll(".location-card").forEach(card => {
+                    card.classList.remove("current");
+                    card.classList.remove("selected");
+                });
 
-            const currentPlayer = gameData.players.find(
-                (player) => player.player_session_id === gameData.sessionId
-            );
+                const currentPlayer = gameData.players.find(
+                    (player) => player.player_session_id === gameData.sessionId
+                );
 
-            if (currentPlayer) {
-                setPlayerRole(currentPlayer.role);
-                setPlayerLocation(currentPlayer.location);
-            }
+                fetchPlayerData();
 
+            }, 50);
             isAssigningRolesRef.current = true;
             updateRoleButton(roleState.showRole, true, "Your fate has been determined", true);
 
@@ -77,6 +87,13 @@ const GameSidebar = ({ gameData, handleKickPlayer, locations }) => {
             socket.off("startGameFeedback");
         };
     }, [gameData]);
+
+    useEffect(() => {
+        if (roleState.showRole && playerLocation?.id) {
+            locationVisibilityFnct(roleState.showRole, playerLocation);
+        }
+    }, [playerLocation]);
+
 
     const copyToClipboard = () => {
         const currentUrl = window.location.href;
@@ -104,11 +121,15 @@ const GameSidebar = ({ gameData, handleKickPlayer, locations }) => {
         const newState = !roleState.showRole;
         localStorage.setItem("showRole", newState);
         updateRoleButton(newState, false, newState ? "Hide Role" : "Show Role");
-        roleVisibilityFnct();
+        locationVisibilityFnct(newState, playerLocation);
     };
 
-    const roleVisibilityFnct = () => {
-        if (roleState.showRole && playerLocation) {
+    const locationVisibilityFnct = (showRole, playerLocation) => {
+        document.querySelectorAll(".location-card").forEach(card => {
+            card.classList.remove("current");
+        });
+
+        if (showRole && playerLocation && playerLocation.id !== null) {
             const targetLocationElement = document.getElementById(`spyx-location-${playerLocation.id}`);
             if (targetLocationElement) {
                 targetLocationElement.classList.add("current");
@@ -125,7 +146,7 @@ const GameSidebar = ({ gameData, handleKickPlayer, locations }) => {
                         src="assets/copy.svg"
                         alt="Copy URL"
                         onClick={copyToClipboard}
-                        style={{ cursor: "pointer" }}
+                        width="20px"
                     />
                     {showCopiedMessage && (
                         <div className="copied-message">
@@ -137,18 +158,27 @@ const GameSidebar = ({ gameData, handleKickPlayer, locations }) => {
 
             <div className="sidebar-item" id="room-players">
                 Players:
+                {gameData.isCreator && (
+                    <img
+                        src="assets/dice.svg"
+                        alt="Randomise"
+                        width="26px"
+                        onClick={shufflePlayers}
+                    />
+                )}
                 <ul>
                     {gameData.players.length > 0 ? (
                         gameData.players.map((player) => (
                             <li key={player.player_session_id}>
                                 {player.player_name}
                                 {gameData.isCreator && player.player_session_id !== gameData.creator_session_id && (
-                                    <button
-                                        className="kick-btn"
-                                        onClick={() => handleKickPlayer(player.player_session_id)}
-                                    >
-                                        Kick
-                                    </button>
+                                    <img
+                                        src="assets/kick.svg"
+                                        alt="Kick"
+                                        width="16px"
+                                        // onClick={() => handleKickPlayer(player.player_session_id)}
+                                        onClick={() => setKickPlayer(player.player_session_id)}
+                                    />
                                 )}
                             </li>
                         ))
@@ -157,6 +187,14 @@ const GameSidebar = ({ gameData, handleKickPlayer, locations }) => {
                     )}
                 </ul>
             </div>
+
+            {kickPlayer && (
+                <KickPlayerPopup
+                    playerName={gameData.players.find(p => p.player_session_id === kickPlayer)?.player_name || "this player"}
+                    onConfirm={confirmKick}
+                    onCancel={() => setKickPlayer(null)}
+                />
+            )}
 
             {gameData.isCreator && (
                 <div className="sidebar-item">

@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import socket from "../socket";
+import JoinGamePopup from "./JoinGamePopup";
 
 const HomePage = () => {
     const [playerName, setPlayerName] = useState("");
     const [isNameValid, setIsNameValid] = useState(false);
     const [feedbackMessage, setFeedbackMessage] = useState("");
+    const [showJoinPopup, setShowJoinPopup] = useState(false);
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -73,23 +75,39 @@ const HomePage = () => {
         }
     };
 
+    const handleJoinGame = () => {
+        if (isNameValid) setShowJoinPopup(true);
+    };
+
     return (
-        <div className="game-wrap">
-            <h1>Welcome to SpyX</h1>
-            <p>Please enter your name:</p>
-            <input
-                type="text"
-                placeholder="Enter your name"
-                value={playerName}
-                onChange={handleInputChange}
-            />
-            <div className="buttons-container">
-                <button onClick={handleCreateGame} disabled={!isNameValid}>
-                    Create Game
-                </button>
-            </div>
-            <div id="feedback" style={{ color: "red" }}>
-                {feedbackMessage}
+        <div className="join-container">
+            <div className="join-wrap">
+                <h1>Welcome to SpyX</h1>
+                <p>Please enter your name:</p>
+                <input
+                    type="text"
+                    placeholder="Enter your name"
+                    value={playerName}
+                    onChange={handleInputChange}
+                />
+                <div className="buttons-container">
+                    <button onClick={handleCreateGame} disabled={!isNameValid}>
+                        Create Game
+                    </button>
+                    <button onClick={handleJoinGame} disabled={!isNameValid}>
+                        Join Game
+                    </button>
+                </div>
+                <div id="feedback" style={{ color: "red" }}>
+                    {feedbackMessage}
+                </div>
+                {showJoinPopup && (
+                    <JoinGamePopup
+                        playerName={playerName}
+                        onConfirm={(roomCode) => console.log("Joining room:", roomCode)}
+                        onCancel={() => setShowJoinPopup(false)}
+                    />
+                )}
             </div>
         </div>
     );
